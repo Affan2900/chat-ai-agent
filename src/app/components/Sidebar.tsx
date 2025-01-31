@@ -1,41 +1,76 @@
-import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
 
-type Chat = {
-  id: string
-  name: string
-  messages: { role: "user" | "assistant"; content: string }[]
-}
+import { useRouter } from "next/navigation" 
+import { NavigationContext } from '@/lib/NavigationProvider'
+import { use } from "react"
+import { Button } from '@/components/ui/button'
+import { PlusIcon } from "@radix-ui/react-icons"
+import{ cn } from "@/lib/utils"
+import { useMutation, useQuery } from "convex/react"
+import { api } from "../../../convex/_generated/api"
+import { Id } from "../../../convex/_generated/dataModel"
+import ChatRow from "./ChatRow"
 
-type SidebarProps = {
-  chats: Chat[]
-  currentChat: Chat | null
-  onSelectChat: (chat: Chat) => void
-  onNewChat: () => void
-}
+function Sidebar() {
+  const router = useRouter()
+  const { isMobileNavOpen, closeMobileNav } = use(NavigationContext)
 
-export function Sidebar({ chats, currentChat, onSelectChat, onNewChat }: SidebarProps) {
-  return (
-    <div className="w-64 bg-blue-900 border-r border-blue-200 flex flex-col shadow-lg">
-      <div className="p-4">
-        <Button onClick={onNewChat} className="w-full bg-teal-500 hover:bg-teal-600 text-white">
-          New Chat
-        </Button>
-      </div>
-      <ScrollArea className="flex-1">
-        {chats.map((chat) => (
+  const chats = useQuery(api.chats.listChats)
+  const createChat = useMutation(api.chats.createChat)
+  const deleteChat = useMutation(api.chats.deleteChat)
+
+  const handleClick = () => {
+    //TODO: Route ot chat ID page
+    closeMobileNav();
+  }
+
+  const handleNewChat = async () => {
+    const chatId = await createChat({title: "New Chat"})
+    router.push(`/dashboard/chat/${chatId}`)
+    closeMobileNav()
+  }
+
+  const handleDeleteChat = async (id: Id<"chats">) => {
+    await deleteChat({id})
+    if(window.location.pathname.includes(id)){
+      router.push("/dashboard")
+    }
+  }
+
+  return <>
+    {
+      isMobileNavOpen && (
+        <div className="fixed inset-0 bg-black/20 md:hidden"
+        onClick={closeMobileNav}>
+        </div>
+      )
+    }
+
+    <div
+      className={cn(
+        "fixed md:inset-y-0 top-14 bottom-0 left-0 z-50 w-72 bg-gray-50/80 backdrop-blur-xl border-r border-gray-200/50 transform transition-transfrom duration-300 ease-in-out md:relative md:translate-x-0 md:top-0 flex flex-col",
+        isMobileNavOpen ? "translate-x-0" : "-translate-x-full"
+      )}
+    >
+        <div className="p-4 border-b border-teal-600/50">
           <Button
-            key={chat.id}
-            onClick={() => onSelectChat(chat)}
-            className={`w-full justify-start px-4 py-2 text-left ${
-              currentChat?.id === chat.id ? "bg-blue-100 text-blue-800" : "bg-white text-blue-600 hover:bg-blue-50"
-            }`}
+            onClick={handleNewChat}
+            className="w-full bg-white hover:bg-gray-50 text-gray-700 border border-teal-600/50 shadow-sm hover:shadow transition-all duration-200"
           >
-            {chat.name}
+            <PlusIcon className="mr-2 h-5 w-5" />
+            New Chat
           </Button>
-        ))}
-      </ScrollArea>
+
+        </div>
+
+        <div className="flex-1 overflow-y-auto space-y-2.5 p-4 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
+          {chats?.map((chat)=>(
+            <ChatRow key={chat._id} chat={chat} onDelete={handleDeleteChat}/>
+          ))}
+
+        </div>
+
     </div>
-  )
+  </>
 }
 
+export default Sidebar
