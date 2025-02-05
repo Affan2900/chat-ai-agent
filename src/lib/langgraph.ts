@@ -7,7 +7,7 @@ import { AIMessage, SystemMessage, trimMessages, BaseMessage } from "@langchain/
 import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
 
 const trimmer = trimMessages({
-  maxTokens: 10,
+  maxTokens: 100,
   strategy: "last",
   tokenCounter: (msgs) => msgs.length,
   includeSystem: true,
@@ -26,23 +26,18 @@ const tools = await toolClient.lcTools;
 const toolNode = new ToolNode(tools)
 
 const initialiseModel = () => {
-  const model = new ChatTogetherAI({model: "mistralai/Mistral-7B-Instruct",
-    apiKey: process.env.TOGETHERAI_API_KEY,
+  const model = new ChatTogetherAI({model: "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+    apiKey: process.env.TOGETHER_AI_API_KEY,
     maxTokens: 4096,
     temperature: 0.5,
-    //Remeber streaming not supported
     streaming: true,
     callbacks: [
       {
         handleLLMStart: async()=>{
-
+          console.log("Starting LLM call")
         },
         handleLLMEnd: async(output)=>{
           console.log("LLM end call",output);
-          const usage = output.llmOutput?.usage;
-          if(usage){
-
-          }
         },
       }
     ]
@@ -76,6 +71,7 @@ const createWorkflow = () => {
   
   const stateGraph = new StateGraph(MessagesAnnotation)
        .addNode('agent', async (state) => {
+        console.log("State before processing:", state);
           //Create a system message
           const systemContent = SYSTEM_MESSAGE;
 
@@ -86,12 +82,15 @@ const createWorkflow = () => {
           ]);
 
           const trimmedMessages = await trimmer.invoke(state.messages);
+          console.log("Trimmed messages:", trimmedMessages);
 
           //Format the promtp with the current messages
           const prompt = await promptTemplate.invoke({messages: trimmedMessages});
+          console.log("Generated prompt:", prompt);
 
           //Get response from the model
           const response = await model.invoke(prompt);
+          console.log("Model response:", response);
 
           return { messages: [response] }
        })
@@ -103,36 +102,11 @@ const createWorkflow = () => {
   return stateGraph;
 }
 
-function addCachingHeaders(messages: BaseMessage[]): BaseMessage[] {
-  if(!messages.length){
-    return messages;
-  }
-
-  const cachedMessages = [...messages];
-
-  const addCache = (message: BaseMessage) => {
-    message.content = [
-      {
-        type: "text",
-        text: message.content as string,
-        cache_control: { type: "ephemeral" },
-      }
-    ]
-  }
-
-}
 
 export async function submitQuestion(messages: BaseMessage[], chatId: string){
 
-  // Add caching headers to messages
-  const cachedMessages = addCachingHeaders(messages){
-
-  }
-
   const workflow = createWorkflow();
-  
 
-  //DO NOT KNOW IF THIS MEMORY SAVER WORKS WITHOUT PROMPT CACHING
   const checkpointer = new MemorySaver();
 
   //combine workflow with memory
@@ -146,7 +120,7 @@ export async function submitQuestion(messages: BaseMessage[], chatId: string){
     {
       version: 'v2',
       configurable: {
-        thread_id: chatId,
+      thread_id: chatId,
       },
       streamMode: "messages",
       runId: chatId,
