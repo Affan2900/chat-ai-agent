@@ -1,4 +1,4 @@
-import { ChatTogetherAI } from "@langchain/community/chat_models/togetherai";
+import { ChatOllama } from "@langchain/ollama";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import wxflows from "@wxflows/sdk/langchain";
 import { END, START, StateGraph, MessagesAnnotation, MemorySaver } from "@langchain/langgraph";
@@ -26,9 +26,7 @@ const tools = await toolClient.lcTools;
 const toolNode = new ToolNode(tools)
 
 const initialiseModel = () => {
-  const model = new ChatTogetherAI({model: "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
-    apiKey: process.env.TOGETHER_AI_API_KEY,
-    maxTokens: 4096,
+  const model = new ChatOllama({model: "llama3.2:latest",
     temperature: 0.5,
     streaming: true,
     callbacks: [
