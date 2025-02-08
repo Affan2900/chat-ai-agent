@@ -11,7 +11,6 @@ import { getConvexClient } from "@/lib/convex";
 import { api } from "../../../convex/_generated/api";
 import MessageBubble from "./MessageBubble";
 
-
 interface ChatInterfaceProps{
   chatId: Id<"chats">;
   initialMessages: Doc<"messages">[];
@@ -28,48 +27,22 @@ function ChatInterface({ chatId,initialMessages }: ChatInterfaceProps) {
     input: unknown
   } | null>(null);
 
-  const formatToolOutput = (output: unknown):string => {
-    if (typeof output === "string") return output;
-    return JSON.stringify(output, null, 2);
-  }
-
-  const formatTerminalOutput = (
-    tool: string,
-    input: unknown,
-    output: unknown
-  ) => {
-    const terminalHtml = `<div class="bg-[#1e1e1e] text-white font-mono p-2 rounded-md my-2 overflow-x-auto whitespace-normal max-w-[600px]">
-    <div class="flex items-center gap-1.5 border-b border-gray-700 pb-1">
-        <span class="text-red-500">●</span>
-        <span class="text-yellow-500">●</span>
-        <span class="text-green-500">●</span>
-        <span class="text-gray-400 ml-1 text-sm">/${tool}</span>
-    </div>
-    <div class="text-gray-400 mt-1.5">Input</div>
-    <pre class="text-yellow-400 mt-0.5 whitespace-pre-wrap overflow-x-auto">${formatToolOutput(input)}</pre>
-    <div class="text-gray-400 mt-2.5">Output</div>
-    <pre class="text-green-400 mt-0.5 whitespace-pre-wrap overflow-x-auto">${formatToolOutput(output)}</pre>
-</div>`;
-
-return `---START---\n${terminalHtml}\n---END---`;
-  }
-
   const processStream = async (
     reader: ReadableStreamDefaultReader<Uint8Array>,
     onChunk: (chunk: string) => Promise<void>
   ) => {
-    try{
-      while(true){
+    try {
+      while (true) {
         const { done, value } = await reader.read();
-        if (done){
+        if (done) {
           break;
         }
         await onChunk(new TextDecoder().decode(value));
       }
-    } finally{
+    } finally {
       reader.releaseLock();
     }
-  }
+  };
   //To scroll to buttom every time we type messages
   const messageEndRef = useRef<HTMLDivElement>(null);
   useEffect(()=>{
@@ -78,16 +51,16 @@ return `---START---\n${terminalHtml}\n---END---`;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
+  
     const trimmedInput = input.trim();
-    if(!trimmedInput || isLoading) return;
-    
+    if (!trimmedInput || isLoading) return;
+  
     setInput("");
     setStreamedResponse("");
     setCurrentTool(null);
     setIsLoading(true);
-
-    //Add Optimistic message
+  
+    // Add Optimistic message
     const optimisticUserMessage: Doc<"messages"> = {
       _id: `temp_${Date.now()}`,
       chatId,
@@ -95,137 +68,99 @@ return `---START---\n${terminalHtml}\n---END---`;
       role: "user",
       createdAt: Date.now(),
     } as Doc<"messages">;
-    
-    setMessages((prev)=> [...prev, optimisticUserMessage])
-
+  
+    setMessages((prev) => [...prev, optimisticUserMessage]);
+  
     let fullResponse = "";
-
-    //Start Streaming response
-    try{
+  
+    // Start Streaming response
+    try {
       const requestBody: ChatRequestBody = {
-
-        messages: messages.map((msg)=> ({
+        messages: messages.map((msg) => ({
           content: msg.content,
-          role: msg.role
+          role: msg.role,
         })),
         newMessage: trimmedInput,
         chatId,
-      }
-
+      };
+  
       console.log("Sending request to LLM with body:", requestBody);
-
+  
       const response = await fetch("/api/chat/stream", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify(requestBody)
-      })
-
+        body: JSON.stringify(requestBody),
+      });
+  
       console.log("Response from LLM:", response);
-
-      if(!response.ok){
+  
+      if (!response.ok) {
         throw new Error(await response.text());
       }
-      if(!response.body){
+      if (!response.body) {
         throw new Error("No response body");
       }
-
-      //Handle the Stream
-      //Create SSE render and stream parser
-      const parser =  createSSEParser();
+  
+      // Handle the Stream
+      // Create SSE render and stream parser
+      const parser = createSSEParser();
       const reader = response.body.getReader();
-
-      //Process the stream chunks
-      await processStream(reader, async (chunk)=>{
-        //Parse messages from chunk
+  
+      // Process the stream chunks
+      await processStream(reader, async (chunk) => {
+        // Parse messages from chunk
         const messages = parser.parse(chunk);
         console.log("Messages from LLM:", messages);
-        for (const message of messages){
-          switch(message.type){
+        for (const message of messages) {
+          switch (message.type) {
             case StreamMessageType.Token:
-              if("token" in message){
+              if ("token" in message) {
                 fullResponse += message.token;
                 setStreamedResponse(fullResponse);
+                console.log("Streamed response:", fullResponse);
               }
               break;
-            
-            case StreamMessageType.ToolStart:
-              if("tool" in message && "input" in message){
-                setCurrentTool({
-                  name: message.tool,
-                  input: message.input
-                });
-                fullResponse += formatTerminalOutput(
-                  message.tool,
-                  message.input,
-                  "Processing..."
-                )
-                setStreamedResponse(fullResponse);
-              }
-              break;
-            
-            case StreamMessageType.ToolEnd:
-              if("tool" in message && currentTool){
-                const lastTerminalIndex = fullResponse.lastIndexOf(
-                  '<div class="bg-[#1e1e1e]">'
-                )
-                if(lastTerminalIndex !== -1){
-                  fullResponse = fullResponse.substring(0, lastTerminalIndex) + formatTerminalOutput(
-                    message.tool,
-                    currentTool.input,
-                    message.output,
-                  );
-                  setStreamedResponse(fullResponse);
-                }
-                setCurrentTool(null);
-                
-              }
-              break;
-            
+  
             case StreamMessageType.Error:
-              if("error" in message){
+              if ("error" in message) {
                 throw new Error(message.error);
               }
               break;
-            
+  
             case StreamMessageType.Done:
-              const assisstantMessage: Doc<"messages"> = {
-                _id: `temp_assisstant_${Date.now()}`,
+              const assistantMessage: Doc<"messages"> = {
+                _id: `temp_assistant_${Date.now()}`,
                 chatId,
                 content: fullResponse,
                 role: "assistant",
                 createdAt: Date.now(),
               } as Doc<"messages">;
-            
-            //Save message to database
-            const convex = getConvexClient();
-            await convex.mutation(api.messages.store, {
-              chatId,
-              content: fullResponse,
-              role: "assistant",
-            })
-
-            setMessages((prev)=> [...prev, assisstantMessage])
-            setStreamedResponse("");
-            return;
-
+  
+              // Save message to database
+              const convex = getConvexClient();
+              await convex.mutation(api.messages.store, {
+                chatId,
+                content: fullResponse,
+                role: "assistant",
+              });
+  
+              setMessages((prev) => [...prev, assistantMessage]);
+              setStreamedResponse("");
+              console.log("Final response:", fullResponse);
+              return;
           }
         }
-      })
-    } catch(error){
-        console.error(error);
-        setMessages((prev)=> prev.filter((msg)=>msg._id !== optimisticUserMessage._id))
-        setStreamedResponse(
-          formatTerminalOutput(
-            "error",
-            "Failed to process message",
-            error instanceof Error ? error.message : "Unknown error")
-        )
+      });
+    } catch (error) {
+      console.error(error);
+      setMessages((prev) => prev.filter((msg) => msg._id !== optimisticUserMessage._id));
+      setStreamedResponse(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setIsLoading(false);
     }
-  }
+  };
 
   return (
     <main className="flex flex-col h-[calc(100vh-theme(spacing.14))]">
